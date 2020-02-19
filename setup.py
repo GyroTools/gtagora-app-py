@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="gtagora-app",
-    version="0.0.1",
+    version="0.0.2",
     author="Martin Bührer",
     author_email="info@gyrotools.com",
     description="Python version of the Agora app",

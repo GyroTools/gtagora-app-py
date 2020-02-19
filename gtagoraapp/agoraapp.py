@@ -46,13 +46,14 @@ def query_yes_no(question, default="yes"):
             sys.stdout.write("Please respond with 'yes' or 'no' "
                              "(or 'y' or 'n').\n")
 
+
 def run():
     parser = argparse.ArgumentParser()
     parser.add_argument('--setup', action='store_true')
     args = parser.parse_args()
 
-    if args.setup:
-        settings = Settings()
+    settings = Settings()
+    if args.setup or not settings.is_complete():
         server = input(get_input('agora server', settings.server))
         server = server.strip() if server else settings.server
         username = input(get_input('username'))
