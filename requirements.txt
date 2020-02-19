@@ -1,0 +1,4 @@
+websockets==8.1
+gtagora-connector==0.1.7
+pathlib==1.0.1
+pytest
