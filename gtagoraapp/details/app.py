@@ -137,7 +137,7 @@ class App:
         self.logger.info(f'    {command}')
         data['command'] = command
         try:
-            stdout = subprocess.check_output(command, stderr=subprocess.STDOUT)
+            stdout = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
             data['exit_code'] = 0
             self.logger.info(f'  Command successfully completed')
         except subprocess.CalledProcessError as e:
