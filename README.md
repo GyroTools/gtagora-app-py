@@ -14,15 +14,17 @@ Currently gtagora-app supports python 3.6 and 3.7.
 
 ## Basic usage
 
-### Setup
-setup the app the first time it is used:
-```bash
-gtagoraapp --setup
-```
-to change settings call the app with the setup option again. 
-
 ### Run
-run the app with
+Run the app with
 ```bash
 gtagoraapp
 ```
+
+### Setup
+when the app is run for the first time, a setup process is started. You will be prompted for the Agora URL, your 
+credentials and path settings. 
+The setup can also be started manually by calling:
+```bash
+gtagoraapp --setup
+```
+

@@ -71,7 +71,8 @@ def run():
 
         session_key = App.get_session_key(server, username, password)
         settings.setup(server, download_path, session_key, logfile, log_level, console_log_level)
-        exit(0)
+        if args.setup:
+            exit(0)
 
     app = App()
     app.run()

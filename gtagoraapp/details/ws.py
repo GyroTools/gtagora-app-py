@@ -27,7 +27,12 @@ class AgoraWebsocket:
     def __init__(self, settings: Settings, handler):
         self.settings = settings
         self.handler = handler
+        self.logger = handler.logger
+
         uri = urlparse(self.settings.server)
+        if not uri.hostname:
+            raise ValueError('The server URL is invalid. Please run "gtagora --setup" to modify it')
+
         self.uri = 'ws://' + uri.hostname
         if uri.port:
             self.uri = f'{self.uri}:{uri.port}'
@@ -37,8 +42,6 @@ class AgoraWebsocket:
         self.ping_timeout = 10
         self.timout = 10
         self.sleep_time = 30
-
-        self.logger = handler.logger
 
     def run(self):
         asyncio.get_event_loop().run_until_complete(self._listen_forever())
@@ -94,10 +97,9 @@ class AgoraWebsocket:
                     _thread.start_new_thread(self.handler.download, (download_data.get('files'),))
                 if command == 'runTask' and 'data' in data:
                     task_data = data['data']
-                    _thread.start_new_thread(self.handler.runTask, (task_data,))
+                    _thread.start_new_thread(self.handler.run_task, (task_data,))
         except:
             pass
-
 
     def _i_am_receiver(self, msg):
         receiver = msg.get('receiver')
@@ -105,7 +107,6 @@ class AgoraWebsocket:
             return True
 
         return False
-
 
     def _get_ping_data(self):
         system = 'unknown'
@@ -115,19 +116,13 @@ class AgoraWebsocket:
         elif operating_system == 'Windows':
             system = 'windows'
 
-        # TODO:
-        #version_str = pkg_resources.require("gt-agora-app")[0].version
-        version_str = '1.0.0-SNAPSHOT'
-
-        # TODO:
-        version_split = version_str.split('-')
-        version_split = version_split[0].split('.')
-        version = dict()
-        version['major'] = int(version_split[0])
-        version['minor'] = int(version_split[1])
-        version['path'] = int(version_split[2])
-        version['snapshot'] = True
-        version['string'] = version_str
+        try:
+            version_str = pkg_resources.require("gtagora-app")[0].version
+        except:
+            version_str = '0.0.1'
+        self.logger.debug(f'gtagora-app version: {version_str}')
+        version = self.parse_version(version_str)
+        self.logger.debug(f'gtagora-app version (parsed): {json.dumps(version)}')
 
         command_data = dict()
         command_data['appId'] = self.settings.app_id
@@ -137,9 +132,40 @@ class AgoraWebsocket:
         command_data['system'] = system
         command_data['version'] = version
 
-
         data = dict()
         data['command'] = 'ping'
         data['data'] = command_data
 
         return data
+
+    @staticmethod
+    def parse_version(version_str: str):
+        version = {'major': 0, 'minor': 0, 'path': 0, 'snapshot': False, 'string': version_str}
+
+        version_str = version_str.strip()
+        if 'SNAPSHOT' in version_str.upper():
+            version['snapshot'] = True
+
+        version_str = version_str.split('-')[0]
+        version_str = version_str.split(' ')[0]
+        version_splitted = version_str.split('.')
+        counter = 0
+        for part in version_splitted:
+            if counter == 0:
+                try:
+                    version['major'] = int(part)
+                except:
+                    pass
+            elif counter == 1:
+                try:
+                    version['minor'] = int(part)
+                except:
+                    pass
+            elif counter == 2:
+                try:
+                    version['path'] = int(part)
+                except:
+                    pass
+            counter += 1
+
+        return version

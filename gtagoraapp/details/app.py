@@ -1,11 +1,11 @@
-import glob
+import json
 import logging
-import os
 import re
 import subprocess
 from base64 import b64decode
 from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePath
+from typing import List
 
 from gtagora import Agora
 from gtagora.models.dataset import DatasetType
@@ -74,19 +74,19 @@ class App:
         self.logger.info(f'Download Complete')
         self.logger.info(f' ')
 
-    def runTask(self, data):
+    def run_task(self, data):
         try:
             name = data.get('name')
             self.logger.info(' ')
             self.logger.info(f'Running task: "{name}"')
 
             task_info_id = data.get('taskInfo')
-            outputDirectory = data.get('outputDirectory')
-            commandLine = data.get('commandLine')
+            output_directory = data.get('outputDirectory')
+            commandline = data.get('commandLine')
             outputs = data.get('outputs')
             target = data.get('target')
             script = data.get('script')
-            scriptPath = data.get('scriptPath')
+            script_path = data.get('scriptPath')
 
             # download datafiles
             files = data.get('files')
@@ -94,71 +94,30 @@ class App:
                 self.download(files)
 
             # replace base path
-            outputDirectory_orig = outputDirectory
-            outputDirectory = outputDirectory.replace('{{BASE_PATH}}', self.settings.download_path)
-            outputDirectory = Path(outputDirectory)
-            self.logger.debug(f'    Replaced placeholders in output path:')
-            self.logger.debug(f'        {outputDirectory_orig} -->  {outputDirectory_orig}')
-            outputDirectory.mkdir(parents=True, exist_ok=True)
-            output_directory_orig_data = (Path(outputDirectory_orig).parent / 'data').as_posix()
-            output_directory_data = outputDirectory.parent / 'data'
-            replacements = [(outputDirectory_orig, str(outputDirectory)),(output_directory_orig_data, str(output_directory_data))]
+            (output_directory, replacements) = self._prepare_output_directory(output_directory)
 
-            if script and scriptPath:
-                scriptPath = scriptPath.replace('{{BASE_PATH}}', self.settings.download_path)
-                self.logger.debug(f'    Saving the script to {scriptPath}')
-                scriptDir = Path(scriptPath).parent
-                scriptDir.mkdir(parents=True, exist_ok=True)
-                decoded_script = b64decode(script)
-                with open(scriptPath, 'wb') as file:
-                    file.write(decoded_script)
-                if not Path(scriptPath).exists():
-                    self.logger.error(f'Cannot create the script to run')
+            if script and script_path:
+                if not self._save_script(script_path, script):
                     return
 
             stdout = None
             error = None
-            if commandLine:
-                for replacement in replacements:
-                    commandLine = commandLine.replace(replacement[0], replacement[1])
-                (data, error, stdout) = self._perform_task(commandLine)
+            if commandline:
+                self.logger.debug(f'  Replacing placeholders in command line:')
+                commandline = self._replace_base_path(commandline, replacements)
 
-            if outputs and outputDirectory and target:
-                self.logger.debug(f'Collecting outputs:')
-                files = []
-                counter = 1
-                for output in outputs:
-                    type = output.get('type')
-                    regex = output.get('regex')
-                    datasetType = output.get('datasetType')
+                (data, error, stdout) = self._perform_task(commandline)
 
-                    self.logger.debug(f'    {counter}. type = {type}, regex = {regex}, datasetType = {datasetType}: ')
-
-                    if datasetType == DatasetType.PHILIPS_REC:
-                        cur_files = self._find_all_par_recs_in_directory(outputDirectory)
-                    elif datasetType == DatasetType.DICOM:
-                        cur_files = self._find_all_dicoms_in_directory(outputDirectory)
-                    elif datasetType == DatasetType.OTHER:
-                        cur_files = self._find_all_files_in_directory(outputDirectory)
-                    else:
-                        self.logger.error(f'The upload dataset type is not yet implemented. Please contact GyroTools')
-
-                    for file in cur_files:
-                        self.logger.debug(f'        {file}')
-
-                    if not cur_files:
-                        self.logger.debug(f'        No files found')
-
-                    files.extend(cur_files)
-                    counter += 1
+            if outputs and output_directory and target:
+                files = self._collect_outputs(outputs, output_directory)
 
                 if files:
                     target_id = target[0]
                     target_type = target[1]
 
-                    self._uploadFiles(target_id, target_type, files)
+                    self._upload_files(target_id, target_type, files)
                 else:
-                    self.logger.debug(f'No files found to upload')
+                    self.logger.debug(f'  No files found to upload')
 
             if task_info_id:
                 self._mark_task_as_finished(task_info_id, data, error)
@@ -174,20 +133,85 @@ class App:
     def _perform_task(self, command):
         data = dict()
         error = None
-        self.logger.info(f'Executing command:')
+        self.logger.info(f'  Executing command:')
         self.logger.info(f'    {command}')
         data['command'] = command
         try:
             stdout = subprocess.check_output(command, stderr=subprocess.STDOUT)
             data['exit_code'] = 0
+            self.logger.info(f'  Command successfully completed')
         except subprocess.CalledProcessError as e:
             error = f'{e.output}'
             data['exit_code'] = e.returncode
             self.logger.error(f'The process returned a non-zero exit code: exit code: {e.returncode}; message: {e.output}')
         return (data, error, stdout)
 
-    def _uploadFiles(self, target_id, target_type, files):
+    def _prepare_output_directory(self, output_directory):
+        output_directory_orig = output_directory
+        output_directory = self._replace_base_path(output_directory, [('{{BASE_PATH}}', self.settings.download_path)])
+        output_directory = Path(output_directory)
+        self.logger.debug(f'  Replaced placeholders in output path:')
+        self.logger.debug(f'    {output_directory_orig} -->  {output_directory_orig}')
+        output_directory.mkdir(parents=True, exist_ok=True)
+        output_directory_orig_data = (Path(output_directory_orig).parent / 'data').as_posix()
+        output_directory_data = output_directory.parent / 'data'
+        replacements = [(output_directory_orig, str(output_directory)),
+                        (output_directory_orig_data, str(output_directory_data))]
+        return (output_directory, replacements)
+
+    def _replace_base_path(self, input_str: str, replacements: List[tuple]):
+        output_str = input_str
+        for replacement in replacements:
+            output_str = output_str.replace(replacement[0], replacement[1])
+            self.logger.debug(f'    {replacement[0]} -->  {replacement[1]}')
+        return output_str
+
+    def _save_script(self, script_path, script):
+        script_path = script_path.replace('{{BASE_PATH}}', self.settings.download_path)
+        self.logger.debug(f'  Saving the script to {script_path}')
+        scriptDir = Path(script_path).parent
+        scriptDir.mkdir(parents=True, exist_ok=True)
+        decoded_script = b64decode(script)
+        with open(script_path, 'wb') as file:
+            file.write(decoded_script)
+        if not Path(script_path).exists():
+            self.logger.error(f'Cannot create the script to run')
+            return False
+        return True
+
+    def _collect_outputs(self, outputs, output_directory):
+        self.logger.info(f'  Collecting outputs:')
+        files = []
+        counter = 1
+        for output in outputs:
+            type = output.get('type')
+            regex = output.get('regex')
+            datasetType = output.get('datasetType')
+
+            self.logger.info(f'    {counter}. type = {type}, regex = {regex}, datasetType = {datasetType}: ')
+
+            if datasetType == DatasetType.PHILIPS_REC:
+                cur_files = self._find_all_par_recs_in_directory(output_directory)
+            elif datasetType == DatasetType.DICOM:
+                cur_files = self._find_all_dicoms_in_directory(output_directory)
+            elif datasetType == DatasetType.OTHER:
+                cur_files = self._find_all_files_in_directory(output_directory)
+            else:
+                self.logger.error(f'The upload dataset type is not yet implemented. Please contact GyroTools')
+
+            for file in cur_files:
+                self.logger.info(f'      {file}')
+
+            if not cur_files:
+                self.logger.info(f'      No files found')
+
+            files.extend(cur_files)
+            counter += 1
+        return files
+
+    def _upload_files(self, target_id, target_type, files):
         try:
+            self.logger.info(f'  Uploading output files to {target_type} {target_id}:')
             if target_type == 'folder':
                 folder = self.agora.get_folder(target_id)
                 folder.upload(files)
@@ -231,22 +255,22 @@ class App:
 
     def _mark_task_as_finished(self, timeline_id, data, error):
         url = f'/api/v2/timeline/{timeline_id}/finish/'
-        self.logger.debug(f'Mark task as finished with url: {url}')
-        status = self.agora.http_client.post(url, data={'data': data, 'error': error})
+        self.logger.debug(f'  Mark task as finished with url: {url}')
+        status = self.agora.http_client.post(url, data={'data': json.dumps(data), 'error': error})
         if status.status_code == 404:
             url = f'/api/v1/taskinfo/{timeline_id}/finish/'
-            self.logger.debug(f'Mark task as finished with url: {url}')
-            status = self.agora.http_client.post(url, data={'error': error})
+            self.logger.debug(f'  Mark task as finished with url: {url}')
+            status = self.agora.http_client.post(url, data={'data': json.dumps(data), 'error': error})
             if status.status_code != 200:
                 self.logger.warning(f'Could not mark the task as finish. status = {status.status_code}')
 
     def _upload_stdout(self, timeline_id, stdout):
         url = f'/api/v2/timeline/{timeline_id}/stdout/'
-        self.logger.debug(f'Send stdout to url: {url}')
+        self.logger.debug(f'  Send stdout to url: {url}')
         status = self.agora.http_client.post(url, data=stdout)
         if status.status_code == 404:
             url = f'/api/v1/taskinfo/{timeline_id}/stdout/'
-            self.logger.debug(f'Send stdout to url: {url}')
+            self.logger.debug(f'  Send stdout to url: {url}')
             status = self.agora.http_client.post(url, data=stdout)
             if status.status_code != 200:
                 self.logger.warning(f'Could not upload the stdout. status = {status.status_code}')
@@ -257,11 +281,13 @@ class App:
 
         handler = RotatingFileHandler(
             self.settings.logfile, maxBytes=1024*1024*10, backupCount=10)
-        formatter = logging.Formatter(fmt='%(asctime)s:  %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
+        formatter = logging.Formatter(fmt='%(asctime)s %(levelname)s:  %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
         handler.setFormatter(formatter)
         rotating_logger.addHandler(handler)
 
         console_handler = logging.StreamHandler()
+        console_formatter = logging.Formatter(fmt='%(levelname)s:  %(message)s')
+        console_handler.setFormatter(console_formatter)
         console_handler.setLevel(logging.INFO)
         rotating_logger.addHandler(console_handler)
         return rotating_logger
