@@ -71,7 +71,7 @@ class AgoraWebsocket:
                                 self.logger.warning(f'Connection closed (trying again in {self.sleep_time}s): {str(e)}')
                                 await asyncio.sleep(self.sleep_time)
                                 break  # inner loop
-                        asyncio.create_task(self._process_message(msg, ws))
+                        await self._process_message(msg, ws)
             except socket.gaierror as e:
                 self.logger.warning(f'Connection closed: {str(e)}')
                 self.logger.warning(f'Trying to reconnect')
@@ -83,10 +83,12 @@ class AgoraWebsocket:
 
     async def _process_message(self, msg_str, ws):
         try:
+            self.logger.debug(f'Received message {msg_str}')
             msg = json.loads(msg_str)
             data = msg.get('data')
             stream = msg.get('stream')
             if stream == 'App' and data and self._i_am_receiver(msg):
+                self.logger.debug(f'Message is for me!')
                 command = data.get('command')
                 if command == 'hello':
                     self.logger.info(f'Received Hello --> sending ping response')

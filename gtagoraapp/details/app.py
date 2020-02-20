@@ -21,7 +21,7 @@ class App:
         if not self.settings.is_complete():
             raise ValueError('The app is not configured yet. Please run: "agoraapp.py --setup" first')
 
-        self.logger = self._create_logger(self.settings.log_level)
+        self.logger = self._create_logger(self.settings.log_level, self.settings.console_log_level)
         self.logger.info('Starting the Agora App...')
 
         self.agora = Agora.create(self.settings.server, token=self.settings.session_key)
@@ -275,7 +275,7 @@ class App:
             if status.status_code != 200:
                 self.logger.warning(f'Could not upload the stdout. status = {status.status_code}')
 
-    def _create_logger(self, level='INFO'):
+    def _create_logger(self, level='INFO', console_level='INFO'):
         rotating_logger = logging.getLogger('gtagora-app-py')
         rotating_logger.setLevel(level)
 
@@ -288,7 +288,7 @@ class App:
         console_handler = logging.StreamHandler()
         console_formatter = logging.Formatter(fmt='%(levelname)s:  %(message)s')
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(console_level)
         rotating_logger.addHandler(console_handler)
         return rotating_logger
 
