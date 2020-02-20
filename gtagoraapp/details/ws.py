@@ -33,7 +33,13 @@ class AgoraWebsocket:
         if not uri.hostname:
             raise ValueError('The server URL is invalid. Please run "gtagora --setup" to modify it')
 
-        self.uri = 'ws://' + uri.hostname
+        if uri.scheme == 'http':
+            self.uri = 'ws://' + uri.hostname
+        elif uri.scheme == 'https':
+            self.uri = 'wss://' + uri.hostname
+        else:
+            raise ValueError('The Agora URL must start with "http://" or "https://"')
+
         if uri.port:
             self.uri = f'{self.uri}:{uri.port}'
 
