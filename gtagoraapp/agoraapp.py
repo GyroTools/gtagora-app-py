@@ -68,9 +68,13 @@ def run():
         if query_yes_no('do console logging?'):
             console_log_level = input(get_input('console log level', settings.console_log_level, True))
             console_log_level = console_log_level.upper() if console_log_level else settings.console_log_level
+        if query_yes_no('verify ssl certificate?'):
+            verify_certificate = True
+        else:
+            verify_certificate = False
 
         session_key = App.get_session_key(server, username, password)
-        settings.setup(server, download_path, session_key, logfile, log_level, console_log_level)
+        settings.setup(server, download_path, session_key, logfile, log_level, console_log_level, verify_certificate)
         if args.setup:
             exit(0)
 

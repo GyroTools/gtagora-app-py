@@ -4,6 +4,7 @@ import os
 import platform
 import socket
 import _thread
+import ssl
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -58,7 +59,10 @@ class AgoraWebsocket:
             try:
                 headers = Headers()
                 headers['Authorization'] = f'Token {self.settings.session_key}'
-                async with websockets.connect(self.uri, extra_headers=headers) as ws:
+                ssl_args = dict()
+                if not self.settings.verify_certificate:
+                    ssl_args['ssl'] = ssl.SSLContext()
+                async with websockets.connect(self.uri, extra_headers=headers, **ssl_args) as ws:
                     self.logger.info(f'Websocket established with {self.uri}')
                     self.logger.debug(f'Ping response: {json.dumps(self.ping_data)}')
                     await ws.send(str(AgoraWebsocketMessage(self.ping_data)))

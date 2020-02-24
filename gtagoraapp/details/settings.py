@@ -16,13 +16,14 @@ class Settings:
         self.logfile = json['logfile'] if 'logfile' in json else None
         self.log_level = json['log_level'] if 'log_level' in json else None
         self.console_log_level = json['console_log_level'] if 'console_log_level' in json else None
+        self.verify_certificate = json['verify_certificate'] if 'verify_certificate' in json else True
 
     def save(self):
         settings_file = self._get_or_create_file()
         with open(settings_file, 'w') as json_file:
             return json.dump(self.__dict__, json_file, indent=4)
 
-    def setup(self, server, download_path, session_key, logfile=None, log_level=None, console_log_level=None):
+    def setup(self, server, download_path, session_key, logfile=None, log_level=None, console_log_level=None, verify_certificate=True):
         self.server = server
         self.download_path = Path(download_path).as_posix()
         self.session_key = session_key
@@ -46,6 +47,8 @@ class Settings:
         if not console_log_level in logging._nameToLevel:
             raise ValueError(f'Invalid log level. Possible levels are: CRITICAL, ERROR, WARNING, INFO, DEBUG')
         self.console_log_level = console_log_level
+
+        self.verify_certificate = verify_certificate
 
         if not self.app_id:
             self.generate_app_id()
