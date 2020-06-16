@@ -86,6 +86,7 @@ class App:
             outputs = data.get('outputs')
             target = data.get('target')
             script = data.get('script')
+            additional_scripts = data.get('additionalScripts')
             script_path = data.get('scriptPath')
 
             # download datafiles
@@ -93,23 +94,24 @@ class App:
             if files:
                 self.download(files)
 
-            # replace base path
-            (output_directory, replacements) = self._prepare_output_directory(output_directory)
+            if output_directory:
+                Path(output_directory).mkdir(parents=True, exist_ok=True)
 
             if script and script_path:
                 if not self._save_script(script_path, script):
                     return
 
+            if additional_scripts:
+                if not self._save_additional_scripts(additional_scripts):
+                    return
+
             stdout = None
             error = None
             if commandline:
-                self.logger.debug(f'  Replacing placeholders in command line:')
-                commandline = self._replace_base_path(commandline, replacements)
-
                 (data, error, stdout) = self._perform_task(commandline)
 
             if outputs and output_directory and target:
-                files = self._collect_outputs(outputs, output_directory)
+                files = self._collect_outputs(outputs, Path(output_directory))
 
                 if files:
                     target_id = target[0]
@@ -146,28 +148,7 @@ class App:
             self.logger.error(f'The process returned a non-zero exit code: exit code: {e.returncode}; message: {e.output}')
         return (data, error, stdout)
 
-    def _prepare_output_directory(self, output_directory):
-        output_directory_orig = output_directory
-        output_directory = self._replace_base_path(output_directory, [('{{BASE_PATH}}', self.settings.download_path)])
-        output_directory = Path(output_directory)
-        self.logger.debug(f'  Replaced placeholders in output path:')
-        self.logger.debug(f'    {output_directory_orig} -->  {output_directory_orig}')
-        output_directory.mkdir(parents=True, exist_ok=True)
-        output_directory_orig_data = (Path(output_directory_orig).parent / 'data').as_posix()
-        output_directory_data = output_directory.parent / 'data'
-        replacements = [(output_directory_orig, str(output_directory)),
-                        (output_directory_orig_data, str(output_directory_data))]
-        return (output_directory, replacements)
-
-    def _replace_base_path(self, input_str: str, replacements: List[tuple]):
-        output_str = input_str
-        for replacement in replacements:
-            output_str = output_str.replace(replacement[0], replacement[1])
-            self.logger.debug(f'    {replacement[0]} -->  {replacement[1]}')
-        return output_str
-
     def _save_script(self, script_path, script):
-        script_path = script_path.replace('{{BASE_PATH}}', self.settings.download_path)
         self.logger.debug(f'  Saving the script to {script_path}')
         scriptDir = Path(script_path).parent
         scriptDir.mkdir(parents=True, exist_ok=True)
@@ -178,6 +159,25 @@ class App:
             self.logger.error(f'Cannot create the script to run')
             return False
         return True
+
+    def _save_additional_scripts(self, additional_scripts):
+        if not isinstance(additional_scripts, list):
+            return
+
+        for cur_script in additional_scripts:
+            script = cur_script.get('script')
+            script_path = cur_script.get('scriptPath')
+            if script and script_path:
+                self.logger.debug(f'  Saving the script to {script_path}')
+                scriptDir = Path(script_path).parent
+                scriptDir.mkdir(parents=True, exist_ok=True)
+                decoded_script = b64decode(script)
+                with open(script_path, 'wb') as file:
+                    file.write(decoded_script)
+                if not Path(script_path).exists():
+                    self.logger.error(f'Cannot create the script to run')
+                    return False
+                return True
 
     def _collect_outputs(self, outputs, output_directory):
         self.logger.info(f'  Collecting outputs:')

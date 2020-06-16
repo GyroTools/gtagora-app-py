@@ -60,7 +60,7 @@ class AgoraWebsocket:
                 headers = Headers()
                 headers['Authorization'] = f'Token {self.settings.session_key}'
                 ssl_args = dict()
-                if not self.settings.verify_certificate:
+                if not self.settings.verify_certificate and 'wss:' in self.uri:
                     ssl_args['ssl'] = ssl.SSLContext()
                 async with websockets.connect(self.uri, extra_headers=headers, **ssl_args) as ws:
                     self.logger.info(f'Websocket established with {self.uri}')
